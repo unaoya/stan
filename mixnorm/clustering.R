@@ -34,13 +34,13 @@ rng2 <- function(N, mu, Sigma0, Sigma1, Sigma2){
 
 #真の分布のパラメータ
 N <- 100
-mu1 <- c(0.5,0)
-mu2 <- c(0,0.5)
+mu1 <- c(0.1,0)
+mu2 <- c(0,0.1)
 Sigma0 <- matrix(data = c(1,0,0,1), nrow = 2)
 Sigma1 <- matrix(data = c(2,0,0,0.1), nrow = 2)
 Sigma2 <- matrix(data = c(0.1,0,0,2), nrow = 2)
 
-iter <- 2
+iter <- 100
 results <- data.frame(waic1 = rep(0,iter),
                       wbic1 = rep(0,iter),
                       waic2 = rep(0,iter),
@@ -49,16 +49,21 @@ results <- data.frame(waic1 = rep(0,iter),
 for(i in 1:iter){
   d <- rng1(N, mu1, mu2, Sigma1, Sigma2)
   fit <- stan(file = 'model1.stan', data = d,
-              iter = 5000, warmup = 1000)
+              iter = 6000, warmup = 3000)
   log_lik <- extract(fit)$log_likelihood
   results$waic1[i] <- waic(log_lik)
   results$wbic1[i] <- wbic(log_lik)
   fit2 <- stan(file = 'model2.stan', data = d,
-               iter = 5000, warmup = 1000)
+               iter = 6000, warmup = 3000)
   log_lik <- extract(fit2)$log_likelihood
   results$waic2[i] <- waic(log_lik)
   results$wbic2[i] <- wbic(log_lik)
+  print(i)
 }
 results
 fit
 fit2
+stan_trace(fit2, pars = "Sigma1")
+stan_trace(fit2, pars = "Sigma2")
+
+write.csv(x = results, file = "result100.csv")
