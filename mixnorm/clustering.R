@@ -33,6 +33,7 @@ rng2 <- function(N, mu, Sigma0, Sigma1, Sigma2){
 }
 
 #真の分布のパラメータ
+N <- 100
 N <- 30
 mu1 <- c(0.1,0)
 mu2 <- c(0,0.1)
@@ -66,6 +67,7 @@ fit2
 stan_trace(fit2, pars = "Sigma1")
 stan_trace(fit2, pars = "Sigma2")
 
+write.csv(x = results, file = "result100.csv")
 N <- 100
 iter <- 30
 results100 <- data.frame(waic1 = rep(0,iter),
