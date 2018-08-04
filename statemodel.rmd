@@ -1,0 +1,205 @@
+---
+title: "状態空間モデル"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+参考文献
+松浦健太郎『StanとRでベイズ統計モデリング』
+https://github.com/MatsuuraKentaro/RStanBook
+
+## 季節調整
+季節調整項を入れたモデル。
+`data-ss2.txt`を用いる。
+
+季節項season[t]を入れて、周期に応じた制約条件を入れる。
+例えば四半期の場合、season[t] + season[t-1] + season[t-2] + season[t-3]が小さいということにしておく。
+（もしこれが0であれば、season[t] = season[t-4]という式が成り立つ。）
+
+```{stan, output.var="stan_season"}
+data{
+  int T; //サンプルサイズ
+  vector[T] Y; //観測値
+}
+
+parameters{
+  vector[T] mu; //トレンド項
+  vector[T] season; //季節調整項
+  real<lower=0> s_mu; //トレンドの分散
+  real<lower=0> s_season; //季節調整項の誤差
+  real<lower=0> s_Y; //観測誤差
+}
+
+transformed parameters{
+  vector[T] y_mean;
+  y_mean = mu + season;
+}
+
+model{
+  mu[2:T] ~ normal(mu[1:(T-1)], s_mu);
+  for(t in 4:T){
+    season[t] ~ normal(-sum(season[(t-3):(t-1)]), s_season);
+  }
+  Y ~ normal(y_mean, s_Y);
+}
+```
+
+```{r season}
+df <- read.csv('data-ss2.txt')
+plot(df$Y, type='b')
+d <- list(T = length(df$Y), Y = df$Y)
+
+library(rstan)
+fit <- stan(file = "season.stan", data = d)
+```
+
+## 変化点
+変化点を検出する。
+`data_changepoint.txt`を用いる。
+
+誤差の分布にコーシー分布を用いる。
+コーシー分布Cauchy(0,sigma)は、ごく稀に大きな値を生成する。
+
+コーシー分布の累積分布関数は
+$$
+F(y)=\frac{1}{\pi}\arctan(\frac{y-\mu}{\sigma}) + 0.5
+$$
+であり、これの逆関数は
+$$
+F^{-1}(x) = \mu+\sigma\tan(\pi(x-0.5))
+$$
+である。
+したがって、$x$が一様分布に従えば、$F^{-1}(x)$がコーシー分布Cauchy(mu, sigma)に従う。
+
+```{stan, output.var="stan_change"}
+data{
+  int T;
+  vector[T] Y;
+}
+
+parameters{
+  real mu0;
+  real<lower=0> s_mu;
+  vector<lower=-pi()/2, upper=pi()/2>[T-1] mu_raw;
+  real<lower=0> s_Y;
+}
+
+transformed parameters{
+  vector[T] mu;
+  mu[1] = mu0;
+  for (t in 2:T){
+    mu[t] = mu[t-1] + s_mu * tan(mu_raw[t-1]);
+  }
+}
+
+model{
+  Y ~ normal(mu, s_Y);
+}
+```
+
+```{r change}
+df <- read.csv('data_changepoint.txt')
+d <- list(T = length(df$Y), Y = df$Y)
+library(rstan)
+fit <- stan(file = 'changept.stan', data = d)
+```
+
+## 実データでの演習
+車の販売台数のデータ。
+https://kaigi.org/jsai/webprogram/2015/pdf/3C3-3.pdf
+
+```{stan, output.var="stan_car"}
+data {
+  int N;
+  int N_pred;
+  vector[N] Y;
+}
+
+parameters {
+  vector[N] alpha;
+  vector[N] season;
+  real<lower=0> s_Y;
+  real<lower=0> s_a;
+  real<lower=0> s_season;
+}
+
+transformed parameters {
+  vector[N] y_mean;
+  y_mean = alpha + season;
+}
+
+model {
+  alpha[3:N] ~ normal(2*alpha[2:(N-1)] - alpha[1:(N-2)], s_a);
+  for(t in 12:N){
+    season[t] ~ normal(-sum(season[(t-11):(t-1)]), s_season);
+  }
+  Y ~ normal(y_mean, s_Y);
+}
+
+generated quantities {
+  vector[N+N_pred] alpha_all;
+  vector[N+N_pred] season_all;
+  vector[N_pred] Y_pred;
+  alpha_all[1:N] = alpha;
+  season_all[1:N] = season;
+  for (t in 1:N_pred) {
+    season_all[N+t] = normal_rng(-sum(season_all[(N+t-11):(N+t-1)]), s_season);
+    alpha_all[N+t] = normal_rng(2*alpha_all[N+t-1] - alpha_all[N+t-2], s_a);
+    Y_pred[t] = normal_rng(alpha_all[N+t]+season_all[t], s_Y);
+  }
+}
+
+```
+
+```{r car}
+df_sell <- read.csv('car_data/car_sell.csv')
+df_search <- read.csv('car_data/car_search.csv')
+
+library(rstan)
+data <- list(Y=df_sell$ノート, N=length(df_sell$ノート), N_pred=10)
+
+fit_local <- stan(file = "car_local.stan", data = data, iter = 4000)
+upr <- summary(fit_local)$summary[57:120,4]
+mean <- summary(fit_local)$summary[57:120,1]
+lwr <- summary(fit_local)$summary[57:120,8]
+#描画
+res <- data.frame(c(df_sell$ノート, rep(NA, 10)),
+                  mean, upr, lwr)
+matplot(res, type="l", lty=1:4, col=1:4)
+legend("topright", c("observe", "state", "95%upr", "95%lwr"),
+       lty=1:4, col=1:4)
+
+fit_trend <- stan(file = "car_trend.stan", data = data)
+upr <- summary(fit_trend)$summary[57:120,4]
+mean <- summary(fit_trend)$summary[57:120,1]
+lwr <- summary(fit_trend)$summary[57:120,8]
+#描画
+res <- data.frame(c(df_sell$ノート, rep(NA, 10)),
+                  mean, upr, lwr)
+matplot(res, type="l", lty=1:4, col=1:4)
+legend("topright", c("observe", "state", "95%upr", "95%lwr"),
+       lty=1:4, col=1:4)
+
+fit_trend_season <- stan(file = "car_trend_season.stan", data = data)
+upr <- summary(fit_trend_season)$summary[166:229,4] + summary(fit_trend_season)$summary[230:293,4]
+mean <- summary(fit_trend_season)$summary[166:229,1] + summary(fit_trend_season)$summary[230:293,1]
+lwr <- summary(fit_trend_season)$summary[166:229,8] + summary(fit_trend_season)$summary[230:293,8]
+#描画
+res <- data.frame(c(df_sell$ノート, rep(NA, 10)),
+                  mean, upr, lwr)
+matplot(res, type="l", lty=1:4, col=1:4)
+legend("topright", c("observe", "state", "95%upr", "95%lwr"),
+       lty=1:4, col=1:4)
+
+```
+
+東京電力のデータ。
+
+```{r elec}
+df18 <- read.csv('juyo-2018.csv', fileEncoding = 'cp932', skip=2)
+df17 <- read.csv('juyo-2017.csv', fileEncoding = 'cp932', skip=2)
+df16 <- read.csv('juyo-2016.csv', fileEncoding = 'cp932', skip=2)
+```
