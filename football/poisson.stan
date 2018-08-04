@@ -13,9 +13,9 @@ parameters{
 }
 
 transformed parameters{
-    real lambda[N];
+    real<lower=0> lambda[N];
     for (i in 1:N){
-      lambda[i] = exp(beta[1] + r[team[i]] + beta[2] * (gf[i] - 1));
+      lambda[i] = exp(beta[1] + r[team[i]] + beta[2] * gf[i]);
     }
 }
 
@@ -23,5 +23,5 @@ model {
     X ~ poisson(lambda);
     r ~ normal(0, sigma);
     sigma ~ cauchy(0, 5);
-    beta ~ normal(0, 0.001);
+    beta ~ normal(0, 0.0001);
 }
