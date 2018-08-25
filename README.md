@@ -10,3 +10,6 @@ https://drive.google.com/file/d/1MWfqLduDmIbgE4RpenBybce-E0h_NiEO/view?usp=shari
 
 酒データ分析
 https://drive.google.com/file/d/1bbVk_dYGbCj5Fqm515c3NzsyzGeSE-8_/view?usp=sharing
+
+シリアルデータ分析
+https://drive.google.com/open?id=1sricPPK04l44JQn--Pbw4tH5xpVL1_f9
