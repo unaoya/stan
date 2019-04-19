@@ -1,0 +1,81 @@
+---
+title: "モデル比較"
+author: "梅崎直也"
+date: "2018/8/25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## モデル比較の方法
+いくつか方法がある。
+
+- holdout法
+- k交差検証法
+- 情報量基準
+
+holdout法とは、与えられたデータをtrainデータとtestデータに分割し、trainデータを元にモデルのパラメータ推定し、testデータを用いてモデルの予測の精度を計算する。
+
+k交差検証法とは、与えられたデータをk個の組みに分割し、そのうち(k-1)組みをtrainデータと残りの1組みをtestデータとして予測精度を計算。これをk通り計算し、その平均をモデルの精度とする。
+特にtestをサイズ1にして残り全てをtrainとする交差検証をLOOCV, Leave One Out Cross Validationと言う。
+
+情報量基準は、モデルの予測の分布とデータの真の分布の差を測る量を直接計算する。実際には与えられたデータから近似値を求める。
+線形回帰モデルでAICやBICを計算するのと同様だが、これらは正則モデルという比較的良い条件を満たす場合にのみ用いることができる。
+これを一般のモデルに拡張したものがWAICとWBICである。
+
+時系列データの場合、
+交差検証をするには、1点ずつ予測データを増やして予測値の精度の平均をとるという方法をとる。
+
+```{stan, output.var="stan_cv"}
+data {
+  int N_train;
+  int N_test;
+  vector[N_train] X_train;
+}
+
+parameters {
+  vector[N_train] alpha;
+  real<lower=0> s_X;
+  real<lower=0> s_a;
+}
+
+model {
+  X_train ~ normal(alpha, s_X);
+  alpha[2:N_train] ~ normal(alpha[1:(N_train-1)], s_a);
+}
+
+generated quantities {
+  vector[N_train+N_test] alpha_all;
+  vector[N_test] X_pred;
+  alpha_all[1:N_train] = alpha;
+  for (t in 1:N_test) {
+    alpha_all[N_train+t] = normal_rng(alpha_all[N_train+t-1], s_a);
+    X_pred[t] = normal_rng(alpha_all[N_train+t], s_X);
+  }
+}
+```
+
+```{r cv}
+library(rstan)
+
+N <- 100
+X <- rnorm(n = N)
+plot(X, type='l')
+N_train <- 90
+X_train <- X[1:N_train]
+X_test <- X[N_train+1:N]
+d <- list(N_train = N_train,
+          N_test = N - N_train,
+          X_train <- X_train)
+
+fit <- stan(file = "cv.stan", data = d)
+
+alpha_all <- extract(fit, pars='alpha_all')
+alpha_all_mean <- apply(data.frame(alpha_all), 2, mean)
+X_pred <- extract(fit, pars='X_pred')
+X_pred_mean <- apply(data.frame(X_pred), 2, mean)
+sum((X_pred_mean - X[91:100])**2)
+matplot(cbind(X, alpha_all_mean), type='l')
+```

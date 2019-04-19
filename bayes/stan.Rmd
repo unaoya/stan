@@ -1,0 +1,623 @@
+---
+title: "stan"
+output:
+  pdf_document:
+    latex_engine: xelatex
+mainfont: Hiragino Kaku Gothic Pro
+---
+# Stanを用いたMCMCサンプリング
+## Stanの使用法
+.stanファイルに分析するdata, parameter, modelを記述する。
+
+実際に分析するデータや、分析結果の処理はRで行う。
+
+実際にstanのコードとそれを用いた推定について、簡単なモデルから順番に見ていこう。
+
+## 二項分布のパラメータ推定
+コインを50回投げて28回表が出たとする。
+このデータを元に、コインの表の出る確率$p$を推定する。
+
+まずはstanファイルを用意して、以下のように記述する。
+
+```{stan, output.var="stan_binom"}
+data{
+  int D;  //成功した回数
+  int N;  //試行回数
+}
+  
+parameters{
+  real<lower=0,upper=1> p;  //成功確率
+}
+
+model{
+  D ~ binomial(N,p);  //二項分布モデル
+}
+```
+
+次にRのスクリプトに以下のように記述する。
+
+```{r stan_binom}
+library(rstan)
+d <- list(D=28, N=50)
+fit1 <- stan('binom1.stan', data=d)
+fit1
+```
+
+推定結果は以下のようにみることができる。
+
+パラメータのサンプリング、横軸がステップ数
+```{r binom_trace}
+stan_trace(fit1,pars="p")
+```
+
+パラメータのサンプルのヒストグラム
+```{r binom_hist}
+stan_hist(fit1,pars="p")
+```
+
+パラメータ事後分布の密度推定
+```{r binom_dens}
+stan_dens(fit1,pars="p",separate_chains = TRUE)
+```
+
+パラメータの自己相関
+```{r binom_ac}
+stan_ac(fit1,pars = "p",separate_chains = TRUE)
+```
+
+収束の判断。
+
+- Rhatが1に近い（1.05以下が一つの目安）
+- チェインごとのカーネル密度が重なっている
+- 自己相関が低い。定常分布に収束したら相関はないはず
+
+サンプリングした上で平均など色々な関数の値を計算することができる。
+またそれを用いて未知のデータについて予測できる。
+
+例えば次にコインを投げて表の出る確率は、以下のように予測できる。
+```{r binom_ext}
+p <- rstan::extract(fit1)$p
+mean(p)
+```
+
+## ポアソン分布のパラメータ推定
+次にポアソン分布のパラメータ推定をしてみよう。
+
+前に扱った事故件数のデータを用いる。
+
+まず.stanファイルにモデルについて記述する。
+```{stan, output.var="stan_binom"}
+data{
+  int N;  //サンプル数
+  int x[N];  //観測値
+}
+  
+parameters{
+  real<lower=0> lambda;  //ポアソン分布のパラメータ
+}
+
+model{
+  for (i in 1:N){
+    x[i] ~ poisson(lambda);  //ポアソン分布モデル
+    }
+}
+```
+
+次にデータを用意し、Rで分析する。
+```{r stanpoi}
+x <- c(8,4,5,5,7,9,7,5,5,4)
+d <- list(x=x, N=length(x))
+fit2 <- stan('poisson1.stan', data=d)
+fit2
+```
+
+パラメータのサンプリング、横軸がステップ数
+```{r pois_trace}
+stan_trace(fit2,pars="lambda")
+```
+
+パラメータのサンプルのヒストグラム
+```{r pois_hist}
+stan_hist(fit2,pars="lambda")
+```
+
+パラメータ事後分布の密度推定
+```{r pois_dens}
+stan_dens(fit2,pars="lambda",separate_chains = TRUE)
+```
+
+パラメータの自己相関
+```{r pois_ac}
+stan_ac(fit2,pars = "lambda",separate_chains = TRUE)
+```
+
+事故件数の平均の予測値は以下のようになる。
+```{r pois_ext}
+lambda <- rstan::extract(fit2)$lambda
+mean(lambda)
+```
+
+## 正規分布パラメータの推定
+
+次に正規分布のパラメータを推定してみよう。
+
+前と同じ、製品の規格検査のデータを使おう。
+
+```{stan, output.var="normal"}
+data{
+  int N;      //サンプル数
+  real y[N];  //観測値
+}
+
+parameters{
+  real mu;    //平均
+  real<lower=0> sigma; //標準偏差
+}
+
+model{
+  mu ~ normal(0,100);   //平均の事前分布
+  sigma ~ cauchy(0,5);  //標準偏差の事前分布
+  for(i in 1:N){
+    y[i] ~ normal(mu,sigma);
+  }
+}
+```
+
+```{r normal}
+y <- c(102.3,100.4,99.3,100.2,100.3,99.4,101.5,99.3,98.9,100.1)
+d <- list(y=y,N=length(y))
+fit3 <- stan(file = "normal1.stan", data = d)
+fit3
+```
+
+パラメータのサンプリング、横軸がステップ数
+```{r normal_trace}
+stan_trace(fit3, pars=c("mu","sigma"))
+```
+
+パラメータのサンプルのヒストグラム
+```{r normal_hist}
+stan_hist(fit3,pars=c("mu","sigma"))
+```
+
+パラメータ事後分布の密度推定
+```{r normal_dens}
+stan_dens(fit3, pars=c("mu","sigma"),separate_chains = TRUE)
+```
+
+パラメータの自己相関
+```{r normal_ac}
+stan_ac(fit3,pars = c("mu","sigma"),separate_chains = TRUE)
+```
+
+### t検定
+上の正規分布のパラメータの推定の応用で、
+二つのグループの母平均を比較してみよう。
+
+次のように、二つのクラスでテストをした結果が得られたとする。
+このニクラスの平均点に差があると言えるかどうか、ベイズ推定しよう。
+
+各クラスの点数は正規分布に従うと仮定し、
+そのパラメータをそれぞれmu_x, sigma_xとmu_y, sigma_yとしてモデルを作る。
+```{stan, output.var="ttest"}
+data{
+  int N;  //サンプル数
+  real y[N];  //群1
+  real x[N];  //群2
+}
+
+parameters{
+  real mu_y;  //yの平均値
+  real<lower=0> sigma_y;  //yの標準偏差
+  real mu_x;  //xの平均値
+  real<lower=0> sigma_x;  //xの標準偏差
+}
+
+model{
+  mu_y ~ normal(0,100); //無情報事前分布
+  sigma_y ~ cauchy(0,5);//無情報事前分布
+  mu_x ~ normal(0,100); //無情報事前分布
+  sigma_x ~ cauchy(0,5);//無情報事前分布
+  
+  y ~ normal(mu_y,sigma_y);
+  x ~ normal(mu_x,sigma_x);
+}
+
+generated quantities{
+  real diff;  //2群の平均の差
+  diff = mu_x-mu_y;
+}
+```
+
+```{r stanttest}
+library(rstan)
+N<-10
+y<-c(60,39,75,64,36,45,38,28,3,9)
+x<-c(73,67,19,100,100,0,58,39,84,62)
+
+d<-list(N=N, x=x, y=y)
+fit <- stan(file = "ttest.stan", data = d)
+fit
+diff <- rstan::extract(fit)$diff
+p <- sum(ifelse(diff>0,1,0))/length(diff)
+p
+plot(density(diff))
+```
+
+パラメータのサンプリング、横軸がステップ数
+```{r ttest_trace}
+stan_trace(fit)
+```
+
+パラメータのサンプルのヒストグラム
+```{r ttest_hist}
+stan_hist(fit)
+```
+
+パラメータ事後分布の密度推定
+```{r ttest_dens}
+stan_dens(fit,separate_chains = TRUE)
+```
+
+パラメータの自己相関
+```{r ttest_ac}
+stan_ac(fit3,separate_chains = TRUE)
+```
+
+### 線形回帰
+回帰分析もベイズ推定の枠組みで扱うことができる。
+ここでは以下のデータを用いて単回帰分析を行う。
+
+```{stan, output.var="linreg"}
+data{
+  int N;  //サンプル数
+  real x[N];  //説明変数
+  real y[N];  //目的変数
+}
+
+parameters{
+  real a; //傾き
+  real b; //切片
+  real<lower=0> sigma;  //誤差の標準偏差
+}
+
+model{
+  for (i in 1:N){
+    y[i] ~ normal(b+a*x[i],sigma);
+  }
+}
+```
+
+```{r linreg}
+library(rstan)
+N<-30
+x<-runif(N)
+noise<-rnorm(N,mean=0,sd=0.1)
+a<-1
+b<-2
+y<-b+a*x+noise
+d<-list(x=x, y=y, N=N)
+fit<-stan(file='linreg.stan',data=d)
+fit
+```
+
+パラメータのサンプリング、横軸がステップ数
+```{r linreg_trace}
+stan_trace(fit)
+```
+
+パラメータのサンプルのヒストグラム
+```{r linreg_hist}
+stan_hist(fit)
+```
+
+パラメータ事後分布の密度推定
+```{r linreg_dens}
+stan_dens(fit,separate_chains = TRUE)
+```
+
+パラメータの自己相関
+```{r linreg_ac}
+stan_ac(fit3,separate_chains = TRUE)
+```
+
+# 階層ベイズモデル
+## 統計的モデリングの概要
+データを発生させるメカニズムがある確率分布で記述できるとし、
+それをよく説明する確率分布を作る。
+
+## 階層ベイズとは
+データが単純に一つの確率分布から発生するのではなく、
+パラメータが発生するメカニズムとしてさらに確率分布を用いるなど、
+いくつかの確率分布を積み上げてモデルを作る。
+
+例えば個体差、場所差などを入れることができる。
+
+具体的に、以下の事例を見ながら、階層モデリングの様子を把握しよう。
+
+## ロジスティック回帰
+ある20人の生徒に小テストを行った。
+テストは10問からなり、結果は以下のようになった。
+
+```{r logireg1}
+x <- c(10,9,6,7,8,3,4,9,3,7,10,2,0,5,6,3,1,9,0,0)
+```
+
+まずは二項分布モデルに基づいて、生徒の学力を正解率$p$として推定しよう。
+尤度関数を計算すると、以下のようになる。
+$$
+L(p) = C~p^{102}(1-p)^{98}
+$$
+ここで$C$は適当な定数。
+
+事前分布を一様分布として、事後分布は上で求めた結果からベータ分布$B(103,99)$となる。
+このとき$p$の平均はおよそ0.51で、これに対する二項分布の分散はおよそ2.5である。
+
+一方でデータから計算できる分散は12.1となる。
+
+このように二項分布モデルで推定した分散より、
+実際のデータの分散が大きくなる現象を過分散という。
+
+これを解消するために、階層モデルを用いて予測する。
+
+例えばここでは、生徒の個人差のパラメータ$r_i$を用いることにしよう。
+またこの個人差のパラメータは標準偏差sigmaの正規分布の従うとする。
+
+```{stan, output.var="logreg"}
+data{
+  int N;  //サンプル数
+  int M;  //テスト問題数
+  int x[N]; //正解数
+}
+
+parameters{
+  real r[N];  //個人差
+  real beta;  //共通パラメータ
+}
+
+transformed parameters{
+  real<lower=0,upper=1> p[N]; //個人の正解率
+  for (i in 1:N){
+    p[i] = inv_logit(beta+r[i]);
+  }
+}
+
+model{
+  for (i in 1:N){
+    x[i] ~ binomial(M,p[i]);
+  }
+}
+
+```
+
+上のコードを実行する。
+```{r logreg}
+library(rstan)
+N<-20
+x <- c(10,9,6,7,8,3,4,9,3,7,10,2,0,5,6,3,1,9,0,0)
+d<-list(x=x, N=N, M=10)
+fit<-stan(file='logreg.stan',data=d)
+fit
+```
+
+パラメータのサンプリング、横軸がステップ数
+```{r logreg_trace}
+stan_trace(fit)
+```
+
+パラメータのサンプルのヒストグラム
+```{r logreg_hist}
+stan_hist(fit)
+```
+
+パラメータ事後分布の密度推定
+```{r logreg_dens}
+stan_dens(fit)
+```
+
+パラメータの自己相関
+```{r logreg_ac}
+stan_ac(fit)
+```
+
+各生徒の正解率の推定は以下のようになる。
+```{r logreg_hist_r}
+stan_hist(fit, pars = "p")
+```
+
+# 状態空間モデル
+
+## 状態方程式と観測方程式
+観測値$y_n$を直接説明するのではなく、真の状態$x_n$の変化とその観測に分けて考える。
+
+真の状態の様子を説明する式をシステムモデルや状態方程式と呼ぶ。
+$$
+x_n = F_n(x_{n-1}) + G_n(v_n)
+$$
+ここで$v_n$はシステムノイズといわれ、ある確率分布に従う乱数。
+
+また真の状態から観測値が発生する様子を説明する式を観測モデルや観測方程式という。
+$$
+y_n = H_n(x_n) + w_n
+$$
+ここで$w_n$は観測ノイズといわれ、ある確率分布に従う乱数。
+
+一番基本的な例は線形ガウス型モデルと言われるもので、
+上の式において、線形関数$F_n(x)=F_nx, G_n(v)=G_nv, H_n(x)=H_nx$とし、$v_n\sim N(0,Q_n), w_n\sim N(0,R_n)$は正規分布に従う乱数。
+
+また時系列モデルの基本的な例であるARモデル
+
+$$
+y_n = a_1y_{n-1}+a_2y_{n-2}+v_n,~v_n\sim N(0,\sigma^2)
+$$
+
+は、状態空間モデルの言葉を用いると、
+$$
+x_n=\begin{pmatrix}y_n\\y_{n-1}\end{pmatrix}, F=\begin{pmatrix}a_1&a_2\\1&0\end{pmatrix}, G=\begin{pmatrix}1\\0\end{pmatrix},H=\begin{pmatrix}1&0\end{pmatrix}, Q=\sigma^2, R=0
+$$
+
+として表すことができる。
+
+## ローカルレベルモデル
+
+ローカルレベルモデルは次のような状態方程式と観測方程式をもつ。
+
+tを時刻、$x_t$を状態、$y_t$を観測値として、
+$$
+y_t=x_t+\epsilon
+$$
+$$
+x_t=x_{t-1}+\delta
+$$
+$$
+\epsilon \sim N(0,\sigma_1)
+$$
+$$
+\delta \sim N(0,\sigma_2)
+$$
+
+状態方程式はいわゆるランダムウォークになっている。
+```{r randomwlk}
+z<-rnorm(100)
+y<-0
+for (i in 1:100){
+  y[i+1]<-y[i]+z[i]
+}
+plot(y,type='l')
+```
+
+推定するパラメータは状態$x_t$及び誤差の分散
+$\sigma_1,\sigma_2$
+
+```{stan, output.var="locallevel"}
+data {
+  int T; //サンプルサイズ
+  real y[T]; //観測値
+}
+
+parameters {
+  real x[T]; //状態
+  real<lower=0> sigma_s; //状態のノイズの分散
+  real<lower=0> sigma_o; //観測のノイズの分散
+}
+
+model {
+  //観測方程式
+  for (i in 1:T){
+    y[i] ~ normal(x[i], sigma_o);
+  }
+  //状態方程式
+  for (i in 2:T){
+    x[i] ~ normal(x[i-1], sigma_s);
+  }
+}
+```
+
+```{r locallevel}
+#ナイル川データ
+Nile
+y<-list(y=as.numeric(Nile),T=length(Nile))
+y
+
+library(rstan)
+fit <- stan(file = 'locallevel.stan', data = y,
+                 iter = 4000, chains = 4)
+
+#状態の事後分布
+x<-rstan::extract(fit)$x
+#状態の推定結果を可視化する
+head(x)
+d2<-data.frame(x)
+up<-c()
+lo<-c()
+M<-c()
+
+for(i in 1:length(d2)){
+  up[i]<-quantile(d2[,i],0.975)
+  lo[i]<-quantile(d2[,i],0.025)
+  M[i]<-mean(d2[,i])
+}
+
+df<-data.frame(y=y$y, t=1:y$T, x=M, upper=up, lower=lo)
+g<-ggplot(data = df, aes(x = t, y = y))
+g<-g+geom_point()
+g<-g+geom_errorbar(data = df, aes(ymin=lower, ymax=upper, x=t))
+g<-g+geom_line(aes(x=t,y=x),data=df)
+g
+```
+## トレンドモデル
+二回差分のトレンド項を持つ、次のような状態空間モデルを考える。
+
+tを時刻、$x_t$を状態、$y_t$を観測値として、
+$$
+y_t=x_t+\epsilon
+$$
+$$
+x_t-x_{t-1}=x_{t-1}-x_{t-2}+\delta
+$$
+$$
+\epsilon \sim N(0,\sigma_1)
+$$
+$$
+\delta \sim N(0,\sigma_2)
+$$
+
+推定するパラメータは状態$x_t$及び誤差の分散
+$\sigma_1,\sigma_2$
+
+```{stan, output.var="trendmodel"}
+data {
+  int T; //サンプルサイズ
+  real y[T]; //観測値
+}
+
+parameters {
+  real x[T]; //状態
+  real<lower=0> sigma_s; //状態のノイズの分散
+  real<lower=0> sigma_o; //観測のノイズの分散
+}
+
+model {
+  //観測方程式
+  for (i in 1:T){
+    y[i] ~ normal(x[i], sigma_o);
+  }
+  //状態方程式
+  for (i in 3:T){
+    x[i] ~ normal(2*x[i-1]-x[i-2], sigma_s);
+  }
+}
+```
+
+```{r trendmodel}
+#ナイル川データ
+Nile
+y<-list(y=as.numeric(Nile),T=length(Nile))
+y
+
+library(rstan)
+fit <- stan(file = 'trendmodel.stan', data = y,
+                 iter = 4000, chains = 4)
+
+#状態の事後分布
+x<-rstan::extract(fit)$x
+#状態の推定結果を可視化する
+head(x)
+d2<-data.frame(x)
+up<-c()
+lo<-c()
+M<-c()
+
+for(i in 1:length(d2)){
+  up[i]<-quantile(d2[,i],0.975)
+  lo[i]<-quantile(d2[,i],0.025)
+  M[i]<-mean(d2[,i])
+}
+
+df<-data.frame(y=y$y, t=1:y$T, x=M, upper=up, lower=lo)
+g<-ggplot(data = df, aes(x = t, y = y))
+g<-g+geom_point()
+g<-g+geom_errorbar(data = df, aes(ymin=lower, ymax=upper, x=t))
+g<-g+geom_line(aes(x=t,y=x),data=df)
+g
+```
