@@ -1,15 +1,22 @@
-# stan
+# ベイズ統計テキスト編集
 
-https://drive.google.com/file/d/12sEMXBNLKsYlCXmHaAOeDWMcMV8geoTy/view?usp=sharing
+確率について
 
-学力データ分析
-https://drive.google.com/open?id=1uoBGvA6uOUsvZ8QpKUyLaWr7Y-0NNHlh
+確率分布について
 
-酒データ
-https://drive.google.com/file/d/1MWfqLduDmIbgE4RpenBybce-E0h_NiEO/view?usp=sharing
+尤度関数と最尤法
 
-酒データ分析
-https://drive.google.com/file/d/1bbVk_dYGbCj5Fqm515c3NzsyzGeSE-8_/view?usp=sharing
+事後分布と予測分布
 
-シリアルデータ分析
-https://drive.google.com/open?id=1sricPPK04l44JQn--Pbw4tH5xpVL1_f9
+自然共役分布
+
+MCMC
+
+変分推定
+
+予測評価
+
+データ分析例
+
+基本はR markdownでテキストを書いていく
+Rスクリプトとstanファイル、データのファイル
