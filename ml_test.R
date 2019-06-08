@@ -1,6 +1,8 @@
+set.seed(111)
+
 theta <- runif(1)
 
-n <- 10
+n <- 100
 x <- rbinom(n=1, size=n, prob=theta)
 x
 

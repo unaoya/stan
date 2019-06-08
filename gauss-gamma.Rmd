@@ -1,0 +1,70 @@
+---
+title: "Norm-gauss"
+author: "梅崎直也"
+date: "2019/6/8"
+output: html_document
+---
+
+# 正規分布のパラメータ推定
+
+$\mu, \sigma^2$を推定する。
+それぞれ自然共役な事前分布は
+正規分布
+$$
+N(m,s^2)(x)=\frac{1}{\sqrt{2\pi s^2}}\exp(-\frac{\lvert x-m\rvert^2}{2s^2})
+$$
+
+ガンマ分布
+$$
+Ga(a,b)(x)=\frac{b^a}{\Gamma(a)}\exp(-xb)x^{a-1}
+$$
+であった。
+
+この二つのパラメータを同時に推定する。
+パラメータの分布は同時分布$p(\mu, \sigma)$として設定する必要がある。
+
+ここでは、自然共役分布として、ガウス逆ガンマ
+$$
+f(x,y)=
+\frac{1}{\sqrt{2\pi s^2}}\exp(-\frac{\lvert x-m\rvert^2}{2s^2})\frac{b^a}{\Gamma(a)}\exp(-yb)y^{a-1}\\
+=\frac{b^a}{\sqrt{2\pi s^2}\Gamma(a)}y^{a-1}\exp(-\frac{\lvert x-m\rvert^2}{2s^2}-yb)
+$$
+
+となる。ここで、$x, y$が独立でないことに注意する。
+この$m, s, a, b$がハイパーパラメータである。
+
+# 多変数正規分布
+
+$M$変数の正規分布の確率密度関数は、平均$\mu$で分散共分散行列を$\Sigma$とすると、
+$$
+f(x)=\frac{1}{(2\pi)^{M/2}(\det\Sigma)^{1/2}}
+\exp(-\frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu))
+$$
+
+# 線形回帰モデル
+パラメータは$w, \sigma^2$で、$w$が回帰係数。
+
+線形単回帰であれば$y=w_0+w_1x$がモデルの式で、
+データ$(x^{(1)},y^{(1)}), \ldots, (x^{(N)},y^{(N)})$に対して尤度は
+$$
+L(w,\sigma)=\prod_{i=0}^N\frac{1}{\sqrt{2\pi\sigma^2}}
+\exp(-\frac{\lvert y^{(i)}-(w_0+w_1x^{(i)})\rvert^2}{2\sigma^2})\\
+=\left(\frac{1}{\sqrt{2\pi\sigma^2}}\right)^N
+\exp(-\sum^N_{i=0}\frac{\lvert y^{(i)}-(w_0+w_1x^{(i)})\rvert^2}{2\sigma^2})
+$$
+
+となる。
+
+まずは回帰係数のみを推定することを考えよう。
+
+$X, y$をデータを並べてできるベクトル、行列とする。
+$$
+\lvert y-Xw\rvert^2=(y-Xw)^T(y-Xw)\\
+=y^Ty-y^TXw-w^TX^Ty+w^TX^TXw\\
+=(w-(X^TX)^{-1}X^Ty)^TX^TX(w-(X^TX)^{-1}X^Ty)
+$$
+
+と平方完成できる。これを使うと、平均$(X^TX)^{-1}X^ty$で分散が$\sigma^2(X^TX)^{-1}$の多変数の正規分布と同じ形になることがわかる。
+
+なので、$w$の事前分布として自然共役な正規分布を設定する。
+ここで注意してはしいのは、この正規分布は多変数の正規分布となっていること。（単回帰であっても、パラメータは複数あるので必然的に多変数正規分布となる。）
